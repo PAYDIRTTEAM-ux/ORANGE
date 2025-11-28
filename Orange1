@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract FreightBoard is Ownable {
+    IERC20 public usdc;
+    address public treasury;
+
+    uint256 public constant PROTOCOL_FEE = 300; // 3% in basis points
+
+    event LoadPosted(uint256 id, address broker, uint256 amount);
+    event LoadBooked(uint256 id, address driver);
+
+    struct Load {
+        uint256 id;
+        address broker;
+        uint256 amount; // USDC * 1e6
+        bool booked;
+    }
+
+    Load[] public loads;
+
+    constructor(address _usdc, address _treasury) {
+        usdc = IERC20(_usdc);
+        treasury = _treasury;
+    }
+
+    function postLoad(uint256 amount) external {
+        usdc.transferFrom(msg.sender, address(this), amount);
+        loads.push(Load(loads.length, msg.sender, amount, false));
+        emit LoadPosted(loads.length - 1, msg.sender, amount);
+    }
+
+    function bookLoad(uint256 id) external {
+        Load storage load = loads[id];
+        require(!load.booked, "Already booked");
+
+        uint256 fee = (load.amount * PROTOCOL_FEE) / 10000;
+        uint256 payout = load.amount - fee;
+
+        load.booked = true;
+        usdc.transfer(msg.sender, payout);
+        usdc.transfer(treasury, fee);
+
+        emit LoadBooked(id, msg.sender);
+    }
+}
